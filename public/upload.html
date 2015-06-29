@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+	<meta charset="UTF-8">
+	<title>PTG Video TOC to Streaming Framework Converter</title>
+	<script src="js/jquery-2.1.3.min.js"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+	<script src="js/socket.io.js"></script>
+	<link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" type="text/css" rel="stylesheet">
+
+	<style>
+		h2 {
+			margin-bottom: 50px;
+		}
+		.btn-file {
+			position: relative;
+			overflow: hidden;
+		}
+		.btn-file input[type=file] {
+			position: absolute;
+			top: 0;
+			right: 0;
+			min-width: 100%;
+			min-height: 100%;
+			font-size: 100px;
+			text-align: right;
+			filter: alpha(opacity=0);
+			opacity: 0;
+			background: red;
+			cursor: inherit;
+			display: block;
+		}
+		input[readonly] {
+			background-color: white !important;
+			cursor: text !important;
+		}
+		.file-input {
+			margin-bottom: 0;
+		}
+
+		.block {
+			display: block;
+		}
+	</style>
+</head>
+<body>
+
+<div class="container">
+	<h2>Video TOC Converter</h2>
+	<form enctype="multipart/form-data" id="fileinfo">
+		<div class="row">
+			<div class="col-lg-6 col-sm-6 col-12">
+				<div class="form-group">
+					<label for="inputTitle">Title</label>
+					<input type="text" class="form-control" name="title" id="inputTitle" placeholder="Enter project title">
+				</div>
+			</div>
+		</div>
+
+		<label>TOC (TSV) File</label>
+		<div class="row">
+			<div class="col-lg-6 col-sm-6 col-12">
+				<div class="file-input input-group form-group">
+					<span class="input-group-btn">
+						<span class="btn btn-primary btn-file">
+							Browse&hellip; <input type="file" name="file" required/>
+						</span>
+					</span>
+					<input type="text" name="label" class="form-control" readonly>
+					<input type="text" name="id" hidden/>
+				</div>
+				<span class="help-block">
+					Select the TOC (TSV) you want to convert.
+				</span>
+			</div>
+			<div class="form-group">
+				<input id="submit-button" type="button" class="btn btn-primary" value="Upload and Convert" />
+			</div>
+		</div>
+	</form>
+
+	<div id="output"></div>
+
+</div>
+
+<script>
+	$(function () {
+		var socket = io();
+//		var socket = io(window.location.origin, { path: "/public/js/socket.io"});
+
+		socket.on("connect", function (event) {
+			console.log("connected");
+			$("input[name='id']").val(this.id);
+		});
+
+		socket.on("progress", function (msg) {
+			var d = $(".alert[data-id=" + msg.id + "]");
+			if (d.length) {
+				var pct = Math.round(msg.progress);
+				d.find(".progress-bar").width(pct + "%");
+			}
+		});
+
+		$("#submit-button").click(function () {
+			$("#fileinfo").submit();
+		});
+
+		$('.btn-file :file').on('change', function(event, numFiles, label) {
+			var input = $(this),
+					numFiles = input.get(0).files ? input.get(0).files.length : 1,
+					label = input.val().replace(/\\/g, '/').replace(/.*\//, '');
+			input.trigger('fileselect', [numFiles, label]);
+		});
+
+		$('.btn-file :file').on('fileselect', function(event, numFiles, label) {
+			var input = $(this).parents('.input-group').find('[name="label"]'),
+					log = numFiles > 1 ? numFiles + ' files selected' : label;
+
+			if (input.length) {
+				input.val(log);
+			}
+		});
+
+		$("#fileinfo").submit(function (event) {
+			event.preventDefault();
+
+			var id = Date.now();
+
+			// send a temp id so the server can associate a socket (for progress updates) with a request
+			socket.emit("id", id);
+
+			var div = $("<div class='alert alert-info alert-dismissible' role='alert'><p class='status hidden'><strong>Success!</strong></p></div>");
+			div.attr("data-id", id);
+
+			var btn = $('<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>');
+			btn.appendTo(div);
+
+			var progress = $('<div class="progress"><div class="progress-bar" role="progressbar" style="width: 0%"></div></div>');
+			progress.appendTo(div);
+
+			$("#output").append(div);
+
+			var fd = new FormData($("#fileinfo")[0]);
+
+			fd.append("requestid", id);
+
+			$.ajax({
+				url: "upload",
+				type: "POST",
+				data: fd,
+				processData: false,  // tell jQuery not to process the data
+				contentType: false,   // tell jQuery not to set contentType
+				success: function (data, textStatus, jqXHR) {
+					console.log("success");
+					var link = $("<a>", { text: "Click Here to Download" }).attr({ href: data.link, download: data.link });
+					link.appendTo(div);
+					div.removeClass("alert-info").addClass("alert-success").find(".status").removeClass("hidden");
+				}
+			});
+		});
+	});
+</script>
+</body>
+</html>
