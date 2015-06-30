@@ -111,21 +111,12 @@ function doConversion (options) {
 			console.log(err);
 		}
 	});
-
-	/*
-	doExtraction(options, function () {
-		processTOC(options);
-		writeZip(options);
-	});
-	*/
-
-	//return outputFile;
 }
 
 function processData (options, data) {
 	var toc = [];
 
-	var depth = undefined, lastMajor = undefined, minor = 0;
+	var curPart = 0, lastPart = undefined, depth = undefined, lastMajor = undefined, minor = 0;
 
 	for (var i = 0; i < data.length; i++) {
 		var row = data[i];
@@ -144,26 +135,44 @@ function processData (options, data) {
 		obj.short = info.short;
 		obj.desc = info.desc;
 		obj.major = info.major;
+		obj.part = info.part;
 
-		var curDepth = depth;
+		var curDepth = undefined;
 
-		if (obj.major == "") {
-			if (depth == undefined)
-				depth = 0;
-			else
+		if (obj.part && obj.part != lastPart) {
+			curPart++;
+			depth = 0;
+
+			lastPart = obj.part;
+
+			curDepth = curPart;
+		}
+
+		if (curDepth == undefined) {
+			if (obj.major == "") {
+				if (depth == undefined)
+					depth = 0;
+				else
+					depth++;
+
+				if (obj.major == "" && toc.length > 0 && obj.desc == toc[toc.length - 1].desc) {
+					depth--;
+					curDepth = curPart + "," + depth + "," + (minor++);
+				} else {
+					minor = 0;
+
+					curDepth = curPart + "," + depth;
+				}
+			} else if (obj.major == lastMajor) {
+				curDepth = curPart + "," + depth + "," + minor;
+
+				minor++;
+			} else {
 				depth++;
+				minor = 0;
 
-			curDepth = depth;
-
-			minor = 0;
-		} else if (obj.major == lastMajor) {
-			curDepth += "," + minor;
-			minor++;
-		} else {
-			depth++;
-			minor = 0;
-
-			curDepth = depth;
+				curDepth = curPart + "," + depth;
+			}
 		}
 
 		obj.depth = curDepth;
@@ -175,11 +184,46 @@ function processData (options, data) {
 
 	options.toc = toc;
 
-	console.log(options.toc);
+	writeJavascriptOutput(options);
+}
+
+function writeJavascriptOutput (options) {
+	var s = "define([], function () {\n\
+	var toc = [\n";
+
+	for (var i = 0; i < options.toc.length; i++) {
+		var entry = options.toc[i];
+
+		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
+
+		s += JSON.stringify(obj);
+
+		if (i < options.toc.length - 1) {
+			s += ",";
+		}
+
+		s += "\n";
+	}
+
+	s += "];\n\
+	return { toc: toc, markers: [] }\n\
+});";
+
+	var returnDir = options.name + options.timestamp;
+
+	var outputFile = "conversions/" + returnDir + "_toc.js";
+	var outputPath = "public/" + outputFile;
+
+	var dir = path.dirname(outputPath);
+	makeAllPaths(dir);
+
+	options.outputFile = outputFile;
+
+	fs.writeFileSync(outputPath, s);
 }
 
 function parseInfoFromText (filename, description) {
-	var obj = { short: "", desc: "", major: "" };
+	var obj = { part: "", short: "", desc: "", major: "" };
 
 	var reg, res;
 
@@ -189,6 +233,7 @@ function parseInfoFromText (filename, description) {
 
 	if (res) {
 		obj.short = res[1];
+		obj.part = res[1];
 		obj.major = "";
 	} else {
 		// Lesson X: Lesson title
@@ -206,6 +251,14 @@ function parseInfoFromText (filename, description) {
 			if (res) {
 				obj.short = res[1] + "." + res[2];
 				obj.major = res[1];
+			} else {
+				// Summary
+				reg = /Summary/;
+				res = reg.exec(filename);
+
+				if (res) {
+					obj.part = "Summary";
+				}
 			}
 		}
 	}
@@ -215,7 +268,7 @@ function parseInfoFromText (filename, description) {
 	res = reg.exec(description);
 
 	if (res) {
-		obj.desc = res[2];
+		obj.desc = res[0];
 	} else {
 		// X.Y Title
 		reg = /(\d*)\.(\d*)\s(.*)/;
@@ -240,352 +293,7 @@ function parseInfoFromText (filename, description) {
 }
 
 function callWhenComplete (options) {
-	var returnDir = options.name + options.timestamp;
-	var outputFile = "conversions/" + returnDir + ".zip";
-
 	sendProgress(options.id, 100);
 
-	options.response.json({"link": outputFile});
-}
-
-function addToUpdates (options, filename) {
-	if (options.updates) {
-		options.updates.push(filename);
-	} else {
-		options.updates = [filename];
-	}
-}
-
-function ignoreTopLevelPath (fullpath) {
-	var newpath = fullpath.split(path.sep);
-	return newpath.slice(1).join(path.sep);
-}
-
-function escapeRegExp (string){
-	var s = string.replace(/[.*+?^${}()|[/\]\\]/g, "\\$&");
-	return s;
-}
-
-function doExtraction (options, callback) {
-	console.log("extracting");
-
-	var returnDir = options.name + options.timestamp;
-	var targetDir = "temp/" + returnDir + "/";
-
-	var stat = fs.statSync(options.path);
-	var size = stat.size;
-	console.log("Size = " + size);
-
-	var processedLength = 0;
-
-	fs.createReadStream(options.path)
-		.on('close', function () {
-		})
-		.on('data', function (buffer) {
-			processedLength += buffer.length;
-
-			var pct = processedLength / size;
-
-			sendProgress(options.id, pct * 80);
-		})
-		.pipe(unzip.Parse().on('close', callback))
-		.on('entry', function (entry) {
-			var fileName = entry.path;
-			var type = entry.type;
-			var size = entry.size;
-
-			// convert filenames to lowercase and .xhtml to .html
-			fileName = fileName.replace(".xhtml", ".html").toLowerCase();
-			var fullPath = targetDir + fileName;
-			var dir = path.dirname(fullPath);
-			makeAllPaths(dir);
-			var streamOut = fs.createWriteStream(fullPath);
-
-			// chance to process each file
-			// adding to full-text search index
-			// and look for content marked with "rr-update" [kind of crude]
-			entry.on('data', function (buffer) {
-				if (fullPath.indexOf("s9ml/") != -1 && fullPath.indexOf(".html") != -1) {
-					var data = buffer.toString("utf8");
-					if (data.indexOf("rr-update") != -1) {
-						var path_to_updated_file = ignoreTopLevelPath(fileName);
-						addToUpdates(options, path_to_updated_file);
-					}
-
-					/*
-					var $ = cheerio.load(data);
-					var bodyText = $("body").text();
-					var title = $("title").text();
-
-					var doc = {
-						"title": title,
-						"body": bodyText,
-						"id": fileName
-					};
-
-					options.idx.add(doc);
-					*/
-				}
-			});
-
-			// internal HTML conversions:
-			if (fullPath.indexOf(".html") != -1) {
-				// replace video http:// kludge with relative link
-				entry.pipe(es.replace("<source type=\"video/mp4\" src=\"http://informit.com/", "<source type=\"video/mp4\" src=\""))
-					.pipe(es.replace("<source type=\"video/webm\" src=\"http://informit.com/", "<source type=\"video/webm\" src=\""))
-					.pipe(streamOut);
-			} else {
-				entry.pipe(streamOut);
-			}
-		});
-}
-
-function processTOC (options) {
-	console.log("processing TOC");
-
-	console.log("updates = " + (options.updates ? options.updates.length : 0));
-
-	var returnDir = options.name + options.timestamp;
-	var targetDir = "temp/" + returnDir + "/";
-
-	var toc = fs.readFileSync(targetDir + "ops/toc.html", {encoding: "UTF-8"});
-
-	toc = toc.replace(/.xhtml/g, ".html");
-
-	var $ = cheerio.load(toc);
-
-	if (options.updates) {
-		for (var i = 0; i < options.updates.length; i++) {
-			var update = escapeRegExp(options.updates[i]);
-			var link = $("a[href*=" + update + "]");
-			link.each(function (index, element) {
-				$(element).addClass("rr-updated");
-				console.log("updated " + $(element).html());
-			});
-		}
-	}
-
-	// TODO: walk through TOC and add text between hashtags to the search index, using the section index as the ref
-	breakTOCIntoSections(options, $);
-
-	fs.writeFileSync(targetDir + "ops/toc.html", $.html(), { encoding: "UTF-8", flag: "w" });
-
-	sendProgress(options.id, 90);
-}
-
-function includeViewer (archive, options) {
-	archive.file("public/viewer.html", { name: "/viewer.html" });
-	archive.file("public/viewer.js", { name: "/viewer.js" });
-
-	var settings = {
-		title: options.title,
-		folder: "epub",
-		type: "habitat",
-		skin: options.skin,
-		infinite_scrolling: false
-	};
-
-	var settings_string = JSON.stringify(settings);
-
-	var manifest = "define([], function () { return " + settings_string + "; });";
-
-	archive.append(manifest, { name: "/manifest.js" });
-}
-
-function includeSearch (archive, options) {
-	var search_index = JSON.stringify(options.idx.toJSON());
-	var search_module = "define([], function () { return " + search_index + "; });";
-
-	archive.append(search_module, { name: "/search_index.js" });
-}
-
-function writeZip (options) {
-	console.log("writing zip");
-
-	var returnDir = options.name + options.timestamp;
-	var targetDir = "temp/" + returnDir + "/";
-
-	var outputFile = "conversions/" + returnDir + ".zip";
-	var outputPath = "public/" + outputFile;
-
-	var dir = path.dirname(outputPath);
-	makeAllPaths(dir);
-
-	var outputStream = fs.createWriteStream(outputPath);
-	var archive = archiver('zip');
-	outputStream.on("close", function () {
-		doCleanup(options, outputStream);
-
-		// send completion response
-		options.response.json({"link": outputFile});
-	});
-	archive.pipe(outputStream);
-	archive.directory(targetDir, "/epub/");
-
-	includeViewer(archive, options);
-	includeSearch(archive, options);
-
-	archive.finalize();
-
-	sendProgress(options.id, 100);
-}
-
-function doCleanup (options, outputStream) {
-	console.log("cleaning up");
-
-	var returnDir = options.name + options.timestamp;
-	var targetDir = "temp/" + returnDir + "/";
-
-	outputStream.close();
-	fs.unlinkSync(options.path);
-	deleteFolderRecursive(targetDir);
-}
-
-function getFilenameWithoutHash (filename) {
-	var h = filename.indexOf("#");
-	if (h != -1) return filename.substr(0, h);
-	else return filename;
-}
-
-function getHash (filename) {
-	var h = filename.indexOf("#");
-	if (h != -1) return filename.substr(h + 1);
-	else return "";
-}
-
-function breakTOCIntoSections (options, $) {
-	var sections = $("a");
-
-	var lastHref = undefined, lastFilename = undefined, lastHash = undefined, lastTitle = undefined;
-
-	for (var i = 0; i < sections.length; i++) {
-		var thisSection = $(sections[i]);
-		var nextSection = (i < sections.length - 1) ? $(sections[i + 1]) : undefined;
-
-		var href = thisSection.attr("href");
-		var filename = getFilenameWithoutHash(href);
-		var hash = getHash(href);
-		var title = thisSection.text();
-
-		if (filename != lastFilename) {
-			if (lastHash) {
-				console.log("last file, lastHash to end of file");
-				// last file, lastHash to end of file
-				addToSearchIndex(options, { filename: lastFilename, start: lastHash, end: "", title: lastTitle, index: i - 1 } );
-			} else {
-				if (lastFilename) {
-					console.log("last file, entire");
-					// last file, entire
-				}
-			}
-		} else {
-			if (lastHash) {
-				if (hash) {
-					console.log("this file, lastHash to hash");
-					// this file, lastHash to hash
-					addToSearchIndex(options, { filename: filename, start: lastHash, end: hash, title: lastTitle, index: i - 1 } );
-				} else {
-					console.log("this file, lastHash to end of file");
-					// this file, lastHash to end of file
-				}
-			} else {
-				if (hash) {
-					console.log("this file, start of file to hash");
-					// this file, start of file to hash
-					addToSearchIndex(options, { filename: filename, start: "", end: hash, title: lastTitle, index: i - 1 } );
-				} else {
-					// this file, no hash or lasthash; ignore [shouldn't happen]
-				}
-			}
-		}
-
-		lastHref = href;
-		lastFilename = filename;
-		lastHash = hash;
-		lastTitle = title;
-	}
-
-	// add the last section
-	addToSearchIndex(options, { filename: lastFilename, start: lastHash, end: "", title: lastTitle, index: sections.length - 1 } );
-}
-
-function getTextBetween ($, start, end) {
-	var thisText = "";
-	var started = false, finished = false;
-
-	var target = $("#" + start);
-
-	if (target[0].tagName == "html") {
-		started = true;
-	}
-
-	var all = $("body").children();
-	all.each(function (index, element) {
-		var id = $(this).attr("id");
-		if (id == start) {
-			started = true;
-		} else if (id == end) {
-			finished = true;
-		}
-		if (started) {
-			thisText += $(this).text();
-		}
-		if (finished) {
-			return false;
-		}
-	});
-
-	return thisText;
-}
-
-function addToSearchIndex (options, params) {
-	var returnDir = options.name + options.timestamp;
-	var targetDir = "temp/" + returnDir + "/";
-
-	var data = fs.readFileSync(targetDir + "ops/" + params.filename);
-
-	var $ = cheerio.load(data);
-
-	var start, end, thisText = "";
-
-	console.log(params.start + " : " + params.end);
-
-	if (params.start && params.end) {
-		thisText = getTextBetween($, params.start, params.end);
-	} else if (params.start && !params.end) {
-		// read from start to end of file
-		thisText = getTextBetween($, params.start, params.end);
-	} else if (!params.start && params.end) {
-		var end = $("#" + params.end);
-
-		if (end[0].tagName == "html") {
-			// nothing to read
-			console.log("skipping");
-			return;
-		}
-
-		// walk until we find this id
-		var all = $("body").children();
-		all.each(function (index, element) {
-			var id = $(this).attr("id");
-			console.log(id + " / " + params.end);
-			if (id == params.end) {
-				console.log("Found it");
-			}
-		});
-	}
-
-	if (thisText) {
-		console.log("added " + thisText.length);
-
-		var doc = {
-			"title": params.title,
-			"body": thisText,
-			"id": params.index
-		};
-
-		options.idx.add(doc);
-	} else {
-		console.log("nothing for " + params.start + " to " + params.end);
-	}
+	options.response.json({"link": options.outputFile});
 }

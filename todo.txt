@@ -1,4 +1,7 @@
-// TODO: write out toc data
+// TODO: test video hrefs and playback
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// DONE: write out toc data
+// DONE: remove duplicate entries for "introduction" and "summary"
+// DONE: put "Parts" in as a hierarchy
