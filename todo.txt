@@ -1,5 +1,6 @@
 // TODO: include "media path" for accessing video
 // TODO: include project title name in toc.js
+// TODO: add the 3 video file types
 // TODO: test video hrefs and playback (ISBN 9780134051239)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
