@@ -1,4 +1,6 @@
-// TODO: test video hrefs and playback
+// TODO: include "media path" for accessing video
+// TODO: include project title name in toc.js
+// TODO: test video hrefs and playback (ISBN 9780134051239)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 

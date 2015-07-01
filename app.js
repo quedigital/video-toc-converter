@@ -122,11 +122,14 @@ function processData (options, data) {
 		var row = data[i];
 		var obj = {};
 
+		obj.video = row[0];
+
 		var duration = row[2];
 		if (duration) {
 			obj.isVideo = true;
 			obj.duration = duration;
 		} else {
+			// NOTE: this is a "heading" [which might be a better way of detecting the hierarchy]
 			obj.isVideo = false;
 		}
 
@@ -188,6 +191,8 @@ function processData (options, data) {
 }
 
 function writeJavascriptOutput (options) {
+	options.mediaPrefix = "media/video/";
+
 	var s = "define([], function () {\n\
 	var toc = [\n";
 
@@ -195,6 +200,10 @@ function writeJavascriptOutput (options) {
 		var entry = options.toc[i];
 
 		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
+
+		if (entry.isVideo) {
+			obj.video = options.mediaPrefix + entry.video.toLowerCase() + ".mp4";
+		}
 
 		s += JSON.stringify(obj);
 
