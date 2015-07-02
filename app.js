@@ -7,6 +7,7 @@ var path = require('path');
 var cheerio = require('cheerio');
 var es = require('event-stream');
 var parse = require('csv-parse');
+var Datauri = require('datauri');
 
 var app = express();
 
@@ -27,12 +28,19 @@ app.post('/upload', function(request, response) {
 
 	if (request.files && request.files.file) {
 		console.log("Upload received " + request.files.file.originalname);
+
+		var posterFile;
+		if (request.files.posterFile) {
+			posterFile = request.files.posterFile.path;
+		}
+
 		//console.log(request.body); // form fields
 		//console.log(request.files); // form files
 
 		var converted = doConversion({
 			name: request.files.file.originalname,
 			path: request.files.file.path,
+			posterFile: posterFile,
 			response: response,
 			id: request.body.requestid,
 			title: request.body.title,
@@ -114,6 +122,13 @@ function doConversion (options) {
 	});
 }
 
+function processPosterImage (options) {
+	if (options.posterFile) {
+		var imageURI = new Datauri(options.posterFile);
+		options.posterImageData = imageURI.content;
+	}
+}
+
 function processData (options, data) {
 	var toc = [];
 
@@ -188,6 +203,8 @@ function processData (options, data) {
 
 	options.toc = toc;
 
+	processPosterImage(options);
+
 	writeJavascriptOutput(options);
 }
 
@@ -217,7 +234,11 @@ function writeJavascriptOutput (options) {
 
 	s += "projectTitle = " + JSON.stringify(options.title) + ";\n";
 
-	s += "return { toc: toc, markers: [], title: projectTitle }\n\
+	if (options.posterImageData) {
+		s += "posterImageData = " + JSON.stringify(options.posterImageData) + ";\n";
+	}
+
+	s += "return { toc: toc, markers: [], title: projectTitle, posterImage: posterImageData }\n\
 });";
 
 	var returnDir = options.name + options.timestamp;

@@ -8,3 +8,4 @@
 // DONE: include project title name in toc.js
 // DONE: add the 3 video file types
 // DONE: test video hrefs and playback (ISBN 9780134051239)
+// DONE: include a poster image option
