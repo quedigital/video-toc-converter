@@ -35,7 +35,8 @@ app.post('/upload', function(request, response) {
 			path: request.files.file.path,
 			response: response,
 			id: request.body.requestid,
-			title: request.body.title
+			title: request.body.title,
+			mediaPath: request.body.path
 		});
 	}
 });
@@ -191,8 +192,6 @@ function processData (options, data) {
 }
 
 function writeJavascriptOutput (options) {
-	options.mediaPrefix = "media/video/";
-
 	var s = "define([], function () {\n\
 	var toc = [\n";
 
@@ -202,7 +201,7 @@ function writeJavascriptOutput (options) {
 		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
 
 		if (entry.isVideo) {
-			obj.video = options.mediaPrefix + entry.video.toLowerCase() + ".mp4";
+			obj.video = path.join(options.mediaPath, entry.video.toLowerCase());
 		}
 
 		s += JSON.stringify(obj);
@@ -214,8 +213,11 @@ function writeJavascriptOutput (options) {
 		s += "\n";
 	}
 
-	s += "];\n\
-	return { toc: toc, markers: [] }\n\
+	s += "];\n";
+
+	s += "projectTitle = " + JSON.stringify(options.title) + ";\n";
+
+	s += "return { toc: toc, markers: [], title: projectTitle }\n\
 });";
 
 	var returnDir = options.name + options.timestamp;
