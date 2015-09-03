@@ -232,10 +232,12 @@ function writeJavascriptOutput (options) {
 
 	s += "];\n";
 
-	s += "projectTitle = " + JSON.stringify(options.title) + ";\n";
+	s += "var projectTitle = " + JSON.stringify(options.title) + ";\n";
 
 	if (options.posterImageData) {
-		s += "posterImageData = " + JSON.stringify(options.posterImageData) + ";\n";
+		s += "var posterImageData = " + JSON.stringify(options.posterImageData) + ";\n";
+	} else {
+		s += "var posterImageData = undefined;\n";
 	}
 
 	s += "return { toc: toc, markers: [], title: projectTitle, posterImage: posterImageData }\n\
