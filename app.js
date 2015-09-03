@@ -262,7 +262,7 @@ function parseInfoFromText (filename, description) {
 	var reg, res;
 
 	// Part X: Part title
-	reg = /Part (.*):\s(.*)/;
+	reg = /^part (.*):\s(.*)/i;
 	res = reg.exec(filename);
 
 	if (res) {
@@ -271,7 +271,7 @@ function parseInfoFromText (filename, description) {
 		obj.major = "";
 	} else {
 		// Lesson X: Lesson title
-		reg = /Lesson (.*):\s(.*)/;
+		reg = /^lesson (.*):\s(.*)/i;
 		res = reg.exec(filename);
 
 		if (res) {
@@ -279,7 +279,7 @@ function parseInfoFromText (filename, description) {
 			obj.major = res[1];
 		} else {
 			// Lesson_X_Y
-			reg = /Lesson_(.*)_(.*)/;
+			reg = /^lesson_(.*)_(.*)/i;
 			res = reg.exec(filename);
 
 			if (res) {
@@ -287,7 +287,7 @@ function parseInfoFromText (filename, description) {
 				obj.major = res[1];
 			} else {
 				// Summary
-				reg = /Summary/;
+				reg = /^summary/i;
 				res = reg.exec(filename);
 
 				if (res) {
