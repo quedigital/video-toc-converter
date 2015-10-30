@@ -44,7 +44,9 @@ app.post('/upload', function(request, response) {
 			response: response,
 			id: request.body.requestid,
 			title: request.body.title,
-			mediaPath: request.body.path
+			mediaPath: request.body.path,
+			zipfiles: request.body.zipfiles,
+			isbn: request.body.isbn
 		});
 	}
 });
@@ -129,10 +131,16 @@ function processPosterImage (options) {
 	}
 }
 
+// part, lesson, sublesson
+
 function processData (options, data) {
 	var toc = [];
 
-	var curPart = 0, lastPart = undefined, depth = undefined, lastMajor = undefined, minor = 0;
+	var counter = 0;
+
+	var curPart = 0, lastPart = undefined, lastLesson = undefined, lastSublesson = 0;
+	var depth = undefined;
+
 
 	for (var i = 0; i < data.length; i++) {
 		var row = data[i];
@@ -153,11 +161,53 @@ function processData (options, data) {
 
 		obj.short = info.short;
 		obj.desc = info.desc;
-		obj.major = info.major;
 		obj.part = info.part;
+		obj.lesson = info.lesson;
+		obj.sublesson = info.sublesson;
 
-		var curDepth = undefined;
+		var curDepth = "";
 
+		if (obj.lesson == "Introduction") {
+			obj.lesson = "0";
+		} else if (obj.lesson == "Summary") {
+			obj.lesson = parseInt(lastLesson) + 1;
+		}
+
+		if (obj.part === undefined) {
+			obj.part = lastPart;
+		}
+
+		if (obj.lesson === undefined) {
+			obj.lesson = lastLesson;
+		}
+
+		if (obj.sublesson === undefined) {
+			if (lastSublesson != undefined) {
+				if (lastSublesson == "")
+					obj.sublesson = "0";
+				else
+					obj.sublesson = parseInt(lastSublesson) + 1;
+			} else {
+				obj.sublesson = counter++;
+			}
+		}
+
+		if (obj.part != undefined) curDepth = obj.part;
+
+		if (obj.lesson != undefined && obj.lesson !== "") {
+			if (curDepth !== "") curDepth += ",";
+			curDepth += obj.lesson;
+		}
+		if (obj.sublesson != undefined && obj.sublesson !== "") {
+			if (curDepth !== "") curDepth += ",";
+			curDepth += obj.sublesson;
+		}
+
+		if (obj.lesson !== lastLesson) {
+			counter = 0;
+		}
+
+		/*
 		if (obj.part && obj.part != lastPart) {
 			curPart++;
 			depth = 0;
@@ -183,20 +233,30 @@ function processData (options, data) {
 					curDepth = curPart + "," + depth;
 				}
 			} else if (obj.major == lastMajor) {
+				if (depth == undefined)
+					depth = 0;
+
 				curDepth = curPart + "," + depth + "," + minor;
 
 				minor++;
 			} else {
-				depth++;
+				if (depth == undefined)
+					depth = 0;
+				else
+					depth++;
+
 				minor = 0;
 
 				curDepth = curPart + "," + depth;
 			}
 		}
+		*/
 
 		obj.depth = curDepth;
 
-		lastMajor = obj.major;
+		lastPart = obj.part;
+		lastLesson = obj.lesson;
+		lastSublesson = obj.sublesson;
 
 		toc.push(obj);
 	}
@@ -205,10 +265,12 @@ function processData (options, data) {
 
 	processPosterImage(options);
 
-	writeJavascriptOutput(options);
+	generateJavascriptTOC(options);
+
+	writeZip(options);
 }
 
-function writeJavascriptOutput (options) {
+function generateJavascriptTOC (options) {
 	var s = "define([], function () {\n\
 	var toc = [\n";
 
@@ -216,6 +278,16 @@ function writeJavascriptOutput (options) {
 		var entry = options.toc[i];
 
 		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
+
+		if (options.zipfiles) {
+			// RULE: lesson between 1 and n-1
+			var lessonNumber = parseInt(entry.lesson);
+			if (lessonNumber > 0 && lessonNumber < 10 && (entry.sublesson === "" || entry.sublesson === undefined)) {
+				var lessondigits = parseInt(entry.lesson);
+				if (lessondigits < 10) lessondigits = "0" + lessondigits;
+				obj.download = options.isbn + "-lesson_" + lessondigits + ".zip";
+			}
+		}
 
 		if (entry.isVideo) {
 			obj.video = path.join(options.mediaPath, entry.video.toLowerCase());
@@ -243,6 +315,9 @@ function writeJavascriptOutput (options) {
 	s += "return { toc: toc, markers: [], title: projectTitle, posterImage: posterImageData }\n\
 });";
 
+	options.tocJS = s;
+
+	/*
 	var returnDir = options.name + options.timestamp;
 
 	var outputFile = "conversions/" + returnDir + "_toc.js";
@@ -254,9 +329,82 @@ function writeJavascriptOutput (options) {
 	options.outputFile = outputFile;
 
 	fs.writeFileSync(outputPath, s);
+	*/
 }
 
 function parseInfoFromText (filename, description) {
+	var obj = { part: undefined, lesson: undefined, sublesson: undefined, short: "", desc: "" };
+
+	var reg, res;
+
+	var found = false;
+
+	// look for: "Introduction" in filename
+	reg = /^introduction/i;
+	res = reg.exec(filename);
+
+	if (res) {
+		obj.lesson = "Introduction";
+		obj.sublesson = "";
+		obj.desc = description;
+		found = true;
+	}
+
+	// look for: "Summary" in filename
+	reg = /^summary/i;
+	res = reg.exec(filename);
+
+	if (res) {
+		obj.lesson = "Summary";
+		obj.sublesson = "";
+		obj.desc = description;
+		found = true;
+	}
+
+	if (!found) {
+		// look for: "Lesson _: Title" in filename
+		reg = /^lesson (.*):\s(.*)/i;
+		res = reg.exec(filename);
+
+		if (res) {
+			obj.lesson = res[1];
+			obj.sublesson = "";
+			obj.desc = res[0];
+			obj.short = res[1];
+			found = true;
+		}
+	}
+
+	if (!found) {
+		// look for XX_YY in filename
+		reg = /^(\d*)\_(\d*)/;
+		res = reg.exec(filename);
+
+		if (res) {
+			obj.lesson = parseInt(res[1]);
+			if (res[2])
+				obj.sublesson = parseInt(res[2]);
+
+			// X.Y Title
+			reg = /(\d*)\.(\d*)\s(.*)/;
+			res = reg.exec(description);
+
+			if (res) {
+				obj.desc = res[3];
+				obj.short = res[1] + "." + res[2];
+			} else {
+				obj.desc = description;
+			}
+
+			found = true;
+		}
+	}
+
+	return obj;
+}
+
+// Dan's latest TOC doesn't match this anymore (!)
+function parseInfoFromText_deprecated (filename, description) {
 	var obj = { part: "", short: "", desc: "", major: "" };
 
 	var reg, res;
@@ -309,6 +457,8 @@ function parseInfoFromText (filename, description) {
 		res = reg.exec(description);
 
 		if (res) {
+			obj.major = res[1];
+			obj.part = res[2];
 			obj.desc = res[3];
 		} else {
 			// Lesson X: Title
@@ -330,4 +480,71 @@ function callWhenComplete (options) {
 	sendProgress(options.id, 100);
 
 	options.response.json({"link": options.outputFile});
+}
+
+function writeZip (options) {
+	var returnDir = options.name + options.timestamp;
+	var targetDir = path.join("temp", returnDir, "output");
+
+	var outputFile = "conversions/" + returnDir + ".zip";
+	var outputPath = "public/" + outputFile;
+
+	var dir = path.dirname(outputPath);
+	makeAllPaths(dir);
+
+	var folder = options.title;
+
+	var outputStream = fs.createWriteStream(outputPath);
+	var archive = archiver('zip');
+
+	outputStream.on("close", function () {
+		doOnDone(options, outputStream);
+	});
+
+	archive.pipe(outputStream);
+
+	archive.append(options.tocJS, { name: "/toc.js"});
+
+	includeViewer(archive, options);
+//	includeSearch(archive, options);
+
+	archive.finalize();
+
+	options.outputFile = outputFile;
+}
+
+function doOnDone (options, outputStream) {
+	if (outputStream) {
+		doCleanup(options, outputStream);
+	}
+}
+
+function doCleanup (options, outputStream) {
+	console.log("cleaning up");
+
+	var returnDir = options.name + options.timestamp;
+	var targetDir = "temp/" + returnDir + "/";
+
+	outputStream.close();
+	fs.unlinkSync(options.path);
+	deleteFolderRecursive(targetDir);
+
+	console.log("done");
+}
+
+function includeViewer (archive, options) {
+	archive.file("public/runcourse.html", { name: "/runcourse.html" });
+	archive.file("public/viewer.js", { name: "/viewer.js" });
+
+	var settings = {
+		title: options.title,
+		type: "metadata",
+		infinite_scrolling: false
+	};
+
+	var settings_string = JSON.stringify(settings);
+
+	var manifest = "define([], function () { return " + settings_string + "; });";
+
+	archive.append(manifest, { name: "/manifest.js" });
 }

@@ -1,4 +1,4 @@
-// TODO: include component files and manifest in downloaded zip
+// TODO: include zipfile filename option for downloading all video
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -10,3 +10,4 @@
 // DONE: add the 3 video file types
 // DONE: test video hrefs and playback (ISBN 9780134051239)
 // DONE: include a poster image option
+// DONE: include component files and manifest in downloaded zip
