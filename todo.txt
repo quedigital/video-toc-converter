@@ -11,3 +11,4 @@
 // DONE: test video hrefs and playback (ISBN 9780134051239)
 // DONE: include a poster image option
 // DONE: include component files and manifest in downloaded zip
+// DONE: don't hardcode last lesson # for zipfile download

@@ -44,7 +44,7 @@ app.post('/upload', function(request, response) {
 			response: response,
 			id: request.body.requestid,
 			title: request.body.title,
-			mediaPath: request.body.path,
+			mediaPath: request.body.path == undefined ? "" : request.body.path,
 			zipfiles: request.body.zipfiles,
 			isbn: request.body.isbn
 		});
@@ -139,6 +139,7 @@ function processData (options, data) {
 	var counter = 0;
 
 	var curPart = 0, lastPart = undefined, lastLesson = undefined, lastSublesson = 0;
+	var lastInfoLesson;
 	var depth = undefined;
 
 
@@ -207,56 +208,23 @@ function processData (options, data) {
 			counter = 0;
 		}
 
-		/*
-		if (obj.part && obj.part != lastPart) {
-			curPart++;
-			depth = 0;
-
-			lastPart = obj.part;
-
-			curDepth = curPart;
-		}
-
-		if (curDepth == undefined) {
-			if (obj.major == "") {
-				if (depth == undefined)
-					depth = 0;
-				else
-					depth++;
-
-				if (obj.major == "" && toc.length > 0 && obj.desc == toc[toc.length - 1].desc) {
-					depth--;
-					curDepth = curPart + "," + depth + "," + (minor++);
-				} else {
-					minor = 0;
-
-					curDepth = curPart + "," + depth;
-				}
-			} else if (obj.major == lastMajor) {
-				if (depth == undefined)
-					depth = 0;
-
-				curDepth = curPart + "," + depth + "," + minor;
-
-				minor++;
-			} else {
-				if (depth == undefined)
-					depth = 0;
-				else
-					depth++;
-
-				minor = 0;
-
-				curDepth = curPart + "," + depth;
-			}
-		}
-		*/
-
 		obj.depth = curDepth;
+
+		// THEORY: First and "Summary" sections don't get short labels (could also use "first and last lessons don't get short labels")
+		if (obj.lesson > 0) {
+			if (lastInfoLesson != "Summary") {
+				obj.short = obj.lesson + "." + obj.sublesson;
+			} else {
+				obj.short = "";
+			}
+		} else {
+			obj.short = "";
+		}
 
 		lastPart = obj.part;
 		lastLesson = obj.lesson;
 		lastSublesson = obj.sublesson;
+		lastInfoLesson = info.lesson;
 
 		toc.push(obj);
 	}
@@ -264,6 +232,10 @@ function processData (options, data) {
 	options.toc = toc;
 
 	processPosterImage(options);
+
+	options.lastPart = lastPart;
+	options.lastLesson = lastLesson;
+	options.lastSublesson = lastSublesson;
 
 	generateJavascriptTOC(options);
 
@@ -280,12 +252,12 @@ function generateJavascriptTOC (options) {
 		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
 
 		if (options.zipfiles) {
-			// RULE: lesson between 1 and n-1
 			var lessonNumber = parseInt(entry.lesson);
-			if (lessonNumber > 0 && lessonNumber < 10 && (entry.sublesson === "" || entry.sublesson === undefined)) {
+			// THEORY: lessons between 1 and n-1 get zipfile links
+			if (lessonNumber > 0 && lessonNumber < options.lastLesson && (entry.sublesson === "" || entry.sublesson === undefined)) {
 				var lessondigits = parseInt(entry.lesson);
 				if (lessondigits < 10) lessondigits = "0" + lessondigits;
-				obj.download = options.isbn + "-lesson_" + lessondigits + ".zip";
+				obj.download = path.join(options.mediaPath, options.isbn + "-lesson_" + lessondigits + ".zip");
 			}
 		}
 
@@ -306,13 +278,18 @@ function generateJavascriptTOC (options) {
 
 	s += "var projectTitle = " + JSON.stringify(options.title) + ";\n";
 
+	if (options.zipfiles) {
+		var n = path.join(options.mediaPath, options.isbn + "-lessons.zip");
+		s += "var zipFile = " + JSON.stringify(n) + ";\n";
+	}
+
 	if (options.posterImageData) {
 		s += "var posterImageData = " + JSON.stringify(options.posterImageData) + ";\n";
 	} else {
 		s += "var posterImageData = undefined;\n";
 	}
 
-	s += "return { toc: toc, markers: [], title: projectTitle, posterImage: posterImageData }\n\
+	s += "return { toc: toc, markers: [], title: projectTitle, posterImage: posterImageData, zipFile: zipFile }\n\
 });";
 
 	options.tocJS = s;
@@ -347,18 +324,21 @@ function parseInfoFromText (filename, description) {
 		obj.lesson = "Introduction";
 		obj.sublesson = "";
 		obj.desc = description;
+		obj.short = "";
 		found = true;
 	}
 
-	// look for: "Summary" in filename
-	reg = /^summary/i;
-	res = reg.exec(filename);
+	if (!found) {
+		// look for: "Summary" in filename
+		reg = /^summary/i;
+		res = reg.exec(filename);
 
-	if (res) {
-		obj.lesson = "Summary";
-		obj.sublesson = "";
-		obj.desc = description;
-		found = true;
+		if (res) {
+			obj.lesson = "Summary";
+			obj.sublesson = "";
+			obj.desc = description;
+			found = true;
+		}
 	}
 
 	if (!found) {
@@ -387,13 +367,48 @@ function parseInfoFromText (filename, description) {
 
 			// X.Y Title
 			reg = /(\d*)\.(\d*)\s(.*)/;
-			res = reg.exec(description);
+			desc_res = reg.exec(description);
 
-			if (res) {
-				obj.desc = res[3];
-				obj.short = res[1] + "." + res[2];
+			if (desc_res) {
+				obj.desc = desc_res[3];
+				obj.short = desc_res[1] + "." + desc_res[2];
 			} else {
+				// if no X.Y Title, use the XX_YY from the the filename
 				obj.desc = description;
+				var lesson = parseInt(res[1]);
+				var sublesson = parseInt(res[2]);
+				if (!isNaN(lesson) && !isNaN(sublesson))
+					obj.short = lesson + "." + sublesson;
+			}
+
+			found = true;
+		}
+	}
+
+	if (!found) {
+		// look for ISBN-XX_YY in filename
+		reg = /^(\d*)-(\d*)\_(\d*)/;
+		res = reg.exec(filename);
+
+		if (res) {
+			obj.lesson = parseInt(res[2]);
+			if (res[2])
+				obj.sublesson = parseInt(res[3]);
+
+			// X.Y Title in description
+			reg = /(\d*)\.(\d*)\s(.*)/;
+			desc_res = reg.exec(description);
+
+			if (desc_res) {
+				obj.desc = desc_res[3];
+				obj.short = desc_res[1] + "." + desc_res[2];
+			} else {
+				// if no X.Y Title, use the XX_YY from the the filename
+				obj.desc = description;
+				var lesson = parseInt(res[2]);
+				var sublesson = parseInt(res[3]);
+				if (!isNaN(lesson) && !isNaN(sublesson))
+					obj.short = lesson + "." + sublesson;
 			}
 
 			found = true;
