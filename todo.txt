@@ -1,4 +1,3 @@
-// TODO: include zipfile filename option for downloading all video
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -12,3 +11,6 @@
 // DONE: include a poster image option
 // DONE: include component files and manifest in downloaded zip
 // DONE: don't hardcode last lesson # for zipfile download
+// DONE: include zipfile filename option for downloading all video [uses ISBN field]
+// DONE: .html content needs to be loaded as "src" not "video"
+// DONE: checkbox for course-level zipfile

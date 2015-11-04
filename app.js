@@ -46,6 +46,7 @@ app.post('/upload', function(request, response) {
 			title: request.body.title,
 			mediaPath: request.body.path == undefined ? "" : request.body.path,
 			zipfiles: request.body.zipfiles,
+			courseZipfile: request.body.courseZipfile,
 			isbn: request.body.isbn
 		});
 	}
@@ -110,7 +111,7 @@ function doConversion (options) {
 	options.timestamp = Date.now();
 
 	var input = fs.readFileSync(options.path, "utf8");
-	var parseOptions = { delimiter: "\t" };
+	var parseOptions = { delimiter: "\t", quote: "" };
 
 	parse(input, parseOptions, function(err, output) {
 		if (!err) {
@@ -138,7 +139,8 @@ function processData (options, data) {
 
 	var counter = 0;
 
-	var curPart = 0, lastPart = undefined, lastLesson = undefined, lastSublesson = 0;
+	var curPart = 0, lastPart = undefined;
+	var lastPart = -1, lastLesson = -1, lastSublesson = -1, lastSubsublesson = -1, lastDepth = undefined;
 	var lastInfoLesson;
 	var depth = undefined;
 
@@ -147,9 +149,18 @@ function processData (options, data) {
 		var row = data[i];
 		var obj = {};
 
-		obj.video = row[0];
+		var parsed = { part: row[0],
+			lesson: row[1],
+			sublesson: row[2],
+			subsublesson: row[3],
+			description: row[4],
+			filename: row[5],
+			duration: row[6]
+		};
 
-		var duration = row[2];
+		obj.video = parsed.filename;
+
+		var duration = parsed.duration;
 		if (duration) {
 			obj.isVideo = true;
 			obj.duration = duration;
@@ -158,58 +169,66 @@ function processData (options, data) {
 			obj.isVideo = false;
 		}
 
-		var info = parseInfoFromText(row[0], row[1]);
+		var info = parseInfoFromText(parsed);
 
 		obj.short = info.short;
 		obj.desc = info.desc;
 		obj.part = info.part;
 		obj.lesson = info.lesson;
 		obj.sublesson = info.sublesson;
+		obj.subsublesson = info.subsublesson;
 
-		var curDepth = "";
-
+		/*
 		if (obj.lesson == "Introduction") {
 			obj.lesson = "0";
 		} else if (obj.lesson == "Summary") {
 			obj.lesson = parseInt(lastLesson) + 1;
 		}
+		*/
 
-		if (obj.part === undefined) {
+		if (obj.part === "") {
 			obj.part = lastPart;
+		} else {
+			lastLesson = lastSublesson = lastSubsublesson = -1;
 		}
 
-		if (obj.lesson === undefined) {
+		if (obj.lesson === "") {
 			obj.lesson = lastLesson;
+		} else {
+			lastSublesson = lastSubsublesson = -1;
 		}
 
-		if (obj.sublesson === undefined) {
-			if (lastSublesson != undefined) {
-				if (lastSublesson == "")
-					obj.sublesson = "0";
-				else
-					obj.sublesson = parseInt(lastSublesson) + 1;
-			} else {
-				obj.sublesson = counter++;
+		if (obj.sublesson === "") {
+			obj.sublesson = lastSublesson;
+		} else {
+			lastSubsublesson = -1;
+		}
+
+		if (obj.subsublesson === "") {
+			obj.subsublesson = lastSubsublesson;
+		}
+
+		if (obj.desc == "Learning Objectives") {
+			obj.short = obj.lesson + ".0";
+		}
+
+		var curDepth = [];
+
+		curDepth.push(obj.part);
+		curDepth.push(obj.lesson);
+		curDepth.push(obj.sublesson);
+		curDepth.push(obj.subsublesson);
+
+		obj.depth = "";
+
+		for (var j = 0; j < curDepth.length; j++) {
+			if (curDepth[j] != -1) {
+				if (obj.depth != "") obj.depth += ",";
+				obj.depth += curDepth[j];
 			}
 		}
 
-		if (obj.part != undefined) curDepth = obj.part;
-
-		if (obj.lesson != undefined && obj.lesson !== "") {
-			if (curDepth !== "") curDepth += ",";
-			curDepth += obj.lesson;
-		}
-		if (obj.sublesson != undefined && obj.sublesson !== "") {
-			if (curDepth !== "") curDepth += ",";
-			curDepth += obj.sublesson;
-		}
-
-		if (obj.lesson !== lastLesson) {
-			counter = 0;
-		}
-
-		obj.depth = curDepth;
-
+		/*
 		// THEORY: First and "Summary" sections don't get short labels (could also use "first and last lessons don't get short labels")
 		if (obj.lesson > 0) {
 			if (lastInfoLesson != "Summary") {
@@ -220,11 +239,14 @@ function processData (options, data) {
 		} else {
 			obj.short = "";
 		}
+		*/
 
 		lastPart = obj.part;
 		lastLesson = obj.lesson;
 		lastSublesson = obj.sublesson;
+		lastSubsublesson = obj.subsublesson;
 		lastInfoLesson = info.lesson;
+		lastDepth = curDepth;
 
 		toc.push(obj);
 	}
@@ -236,6 +258,7 @@ function processData (options, data) {
 	options.lastPart = lastPart;
 	options.lastLesson = lastLesson;
 	options.lastSublesson = lastSublesson;
+	options.lastDepth = lastDepth;
 
 	generateJavascriptTOC(options);
 
@@ -246,23 +269,45 @@ function generateJavascriptTOC (options) {
 	var s = "define([], function () {\n\
 	var toc = [\n";
 
+	var lastTopLevel = undefined;
+	if (options.lastDepth) {
+		lastTopLevel = parseInt(options.lastDepth[0]);
+	}
+
 	for (var i = 0; i < options.toc.length; i++) {
 		var entry = options.toc[i];
 
 		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
 
 		if (options.zipfiles) {
-			var lessonNumber = parseInt(entry.lesson);
+			/*
 			// THEORY: lessons between 1 and n-1 get zipfile links
+			var lessonNumber = parseInt(entry.lesson);
 			if (lessonNumber > 0 && lessonNumber < options.lastLesson && (entry.sublesson === "" || entry.sublesson === undefined)) {
 				var lessondigits = parseInt(entry.lesson);
 				if (lessondigits < 10) lessondigits = "0" + lessondigits;
 				obj.download = path.join(options.mediaPath, options.isbn + "-lesson_" + lessondigits + ".zip");
 			}
+			*/
+			// NEW THEORY: top-level depths get zipfile links
+			var depths = entry.depth.split(",");
+			if (depths.length == 1) {
+				var d = parseInt(depths[0]);
+				if (d > 0 && d < lastTopLevel) {
+					if (d < 10) d = "0" + d;
+					obj.download = path.join(options.mediaPath, options.isbn + "-lesson_" + d + ".zip");
+				}
+			}
 		}
 
 		if (entry.isVideo) {
 			obj.video = path.join(options.mediaPath, entry.video.toLowerCase());
+		} else if (entry.video) {
+			if (entry.video.toLowerCase().indexOf(".html") != -1) {
+				obj.src = entry.video;
+			} else {
+				obj.video = entry.video;
+			}
 		}
 
 		s += JSON.stringify(obj);
@@ -278,9 +323,11 @@ function generateJavascriptTOC (options) {
 
 	s += "var projectTitle = " + JSON.stringify(options.title) + ";\n";
 
-	if (options.zipfiles) {
+	if (options.courseZipfile) {
 		var n = path.join(options.mediaPath, options.isbn + "-lessons.zip");
 		s += "var zipFile = " + JSON.stringify(n) + ";\n";
+	} else {
+		s += "var zipFile = undefined;\n";
 	}
 
 	if (options.posterImageData) {
@@ -293,23 +340,40 @@ function generateJavascriptTOC (options) {
 });";
 
 	options.tocJS = s;
-
-	/*
-	var returnDir = options.name + options.timestamp;
-
-	var outputFile = "conversions/" + returnDir + "_toc.js";
-	var outputPath = "public/" + outputFile;
-
-	var dir = path.dirname(outputPath);
-	makeAllPaths(dir);
-
-	options.outputFile = outputFile;
-
-	fs.writeFileSync(outputPath, s);
-	*/
 }
 
-function parseInfoFromText (filename, description) {
+function parseInfoFromText (params) {
+	var obj = { part: params.part, lesson: params.lesson, sublesson: params.sublesson, subsublesson: params.subsublesson, short: "", desc: params.description };
+
+	var found = false;
+
+	if (!found) {
+		// look for: "Lesson _: Title" in filename
+		reg = /^lesson (.*):\s(.*)/i;
+		res = reg.exec(params.filename);
+
+		if (res) {
+			obj.short = res[1];
+			found = true;
+		}
+	}
+
+	if (!found) {
+		// X.Y Title
+		reg = /(\d*)\.(\d*)\s(.*)/;
+		res = reg.exec(params.description);
+
+		if (res) {
+			obj.short = res[1] + "." + res[2];
+			obj.desc = res[3];
+			found = true;
+		}
+	}
+
+	return obj;
+}
+
+function parseInfoFromText_also_deprecated (filename, description) {
 	var obj = { part: undefined, lesson: undefined, sublesson: undefined, short: "", desc: "" };
 
 	var reg, res;
