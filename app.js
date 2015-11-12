@@ -132,31 +132,32 @@ function processPosterImage (options) {
 	}
 }
 
-// part, lesson, sublesson
-
 function processData (options, data) {
 	var toc = [];
-
-	var counter = 0;
-
-	var curPart = 0, lastPart = undefined;
 	var lastPart = -1, lastLesson = -1, lastSublesson = -1, lastSubsublesson = -1, lastDepth = undefined;
-	var lastInfoLesson;
-	var depth = undefined;
-
+	var last = [undefined, undefined, undefined, undefined];
+	var counters = [-1, -1, -1, -1];
 
 	for (var i = 0; i < data.length; i++) {
 		var row = data[i];
 		var obj = {};
 
-		var parsed = { part: row[0],
+		var parsed = {
+			part: row[0],
 			lesson: row[1],
 			sublesson: row[2],
 			subsublesson: row[3],
-			description: row[4],
+			short: row[4],
 			filename: row[5],
-			duration: row[6]
+			duration: row[7]
 		};
+
+		var description = parsed.part;
+		if (description == "") description = parsed.lesson;
+		if (description == "") description = parsed.sublesson;
+		if (description == "") description = parsed.subsublesson;
+
+		parsed.description = description;
 
 		obj.video = parsed.filename;
 
@@ -165,48 +166,15 @@ function processData (options, data) {
 			obj.isVideo = true;
 			obj.duration = duration;
 		} else {
-			// NOTE: this is a "heading" [which might be a better way of detecting the hierarchy]
 			obj.isVideo = false;
 		}
 
 		var info = parseInfoFromText(parsed);
 
+		parseDepthsFromFields(obj, info, last, counters);
+
 		obj.short = info.short;
 		obj.desc = info.desc;
-		obj.part = info.part;
-		obj.lesson = info.lesson;
-		obj.sublesson = info.sublesson;
-		obj.subsublesson = info.subsublesson;
-
-		/*
-		if (obj.lesson == "Introduction") {
-			obj.lesson = "0";
-		} else if (obj.lesson == "Summary") {
-			obj.lesson = parseInt(lastLesson) + 1;
-		}
-		*/
-
-		if (obj.part === "") {
-			obj.part = lastPart;
-		} else {
-			lastLesson = lastSublesson = lastSubsublesson = -1;
-		}
-
-		if (obj.lesson === "") {
-			obj.lesson = lastLesson;
-		} else {
-			lastSublesson = lastSubsublesson = -1;
-		}
-
-		if (obj.sublesson === "") {
-			obj.sublesson = lastSublesson;
-		} else {
-			lastSubsublesson = -1;
-		}
-
-		if (obj.subsublesson === "") {
-			obj.subsublesson = lastSubsublesson;
-		}
 
 		if (obj.desc == "Learning Objectives") {
 			obj.short = obj.lesson + ".0";
@@ -222,24 +190,11 @@ function processData (options, data) {
 		obj.depth = "";
 
 		for (var j = 0; j < curDepth.length; j++) {
-			if (curDepth[j] != -1) {
+			if (curDepth[j] != -1 && curDepth[j] != undefined) {
 				if (obj.depth != "") obj.depth += ",";
 				obj.depth += curDepth[j];
 			}
 		}
-
-		/*
-		// THEORY: First and "Summary" sections don't get short labels (could also use "first and last lessons don't get short labels")
-		if (obj.lesson > 0) {
-			if (lastInfoLesson != "Summary") {
-				obj.short = obj.lesson + "." + obj.sublesson;
-			} else {
-				obj.short = "";
-			}
-		} else {
-			obj.short = "";
-		}
-		*/
 
 		lastPart = obj.part;
 		lastLesson = obj.lesson;
@@ -263,6 +218,41 @@ function processData (options, data) {
 	generateJavascriptTOC(options);
 
 	writeZip(options);
+}
+
+function parseDepthsFromFields (obj, info, last, counters) {
+	if (info.part != "" && info.part != last.part) {
+		counters[0] = counters[0] + 1;
+		counters[1] = counters[2] = counters[3] = -1;
+		obj.part = counters[0];
+		last.part = info.part;
+	} else if (info.lesson != "" && info.lesson != last.lesson) {
+		counters[1] = counters[1] + 1;
+		counters[2] = counters[3] = -1;
+		obj.lesson = counters[1];
+		last.lesson = info.lesson;
+	} else if (info.sublesson != "" && info.sublesson != last.sublesson) {
+		counters[2] = counters[2] + 1;
+		counters[3] = -1;
+		obj.sublesson = counters[2];
+		last.sublesson = info.sublesson;
+	} else if (info.subsublesson != "" && info.subsublesson != last.subsublesson) {
+		counters[3] = counters[3] + 1;
+		obj.subsublesson = counters[3];
+		last.subsublesson = info.sublesson;
+	}
+
+	if (counters[0] != -1)
+		obj.part = counters[0];
+
+	if (counters[1] != -1)
+		obj.lesson = counters[1];
+
+	if (counters[2] != -1)
+		obj.sublesson = counters[2];
+
+	if (counters[3] != -1)
+		obj.subsublesson = counters[3];
 }
 
 function generateJavascriptTOC (options) {
@@ -359,7 +349,7 @@ function parseInfoFromText (params) {
 	}
 
 	if (!found) {
-		// X.Y Title
+		// X.Y Title in description
 		reg = /^(\d{1,2})\.(\d{1,2})\s(.*)/;
 		res = reg.exec(params.description);
 
