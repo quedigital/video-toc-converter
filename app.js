@@ -149,7 +149,7 @@ function processData (options, data) {
 			subsublesson: row[3],
 			short: row[4],
 			filename: row[5],
-			duration: row[7]
+			duration: row[6]
 		};
 
 		var description = parsed.part;
