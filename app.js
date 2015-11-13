@@ -333,7 +333,7 @@ function generateJavascriptTOC (options) {
 }
 
 function parseInfoFromText (params) {
-	var obj = { part: params.part, lesson: params.lesson, sublesson: params.sublesson, subsublesson: params.subsublesson, short: "", desc: params.description };
+	var obj = { part: params.part, lesson: params.lesson, sublesson: params.sublesson, subsublesson: params.subsublesson, short: params.short, desc: params.description };
 
 	var found = false;
 
