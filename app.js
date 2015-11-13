@@ -145,9 +145,9 @@ function processData (options, data) {
 		var parsed = {
 			part: row[0],
 			lesson: row[1],
-			sublesson: row[2],
-			subsublesson: row[3],
-			short: row[4],
+			short: row[2],
+			sublesson: row[3],
+			subsublesson: row[4],
 			filename: row[5],
 			duration: row[6]
 		};
