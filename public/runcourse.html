@@ -6,7 +6,22 @@
 
     <title>PTG Content Viewer</title>
 
-    <script	data-main="viewer" src="https://s3.amazonaws.com/storefronts/streaming-video/completecourse/js/require.js"></script>
+	<script>
+		function getInformITBaseURL () {
+			if (window.location.hostname == "localhost") {
+				return "../completecourse/";
+			} else {
+				var stageReq = (window.location.search.indexOf("staging") != -1) || (window.parent && window.parent.location.search.indexOf("staging") != -1);
+				var staging = stageReq ? "_staging/" : "/";
+				return "https://s3.amazonaws.com/storefronts/streaming-video/completecourse" + staging;
+			}
+		}
+		var script = document.createElement('script');
+		script.src = getInformITBaseURL() + "js/require.js";
+		script.async = false;
+		script.dataset.main = "viewer";
+		document.head.appendChild(script);
+	</script>
 </head>
 
 <body>
