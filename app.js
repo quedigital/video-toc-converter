@@ -261,7 +261,12 @@ function generateJavascriptTOC (options) {
 
 	var lastTopLevel = undefined;
 	if (options.lastDepth) {
-		lastTopLevel = parseInt(options.lastDepth[0]);
+		for (var i = 0; i < options.lastDepth.length; i++) {
+			if (options.lastDepth[i] != undefined) {
+				lastTopLevel = parseInt(options.lastDepth[i]);
+				break;
+			}
+		}
 	}
 
 	for (var i = 0; i < options.toc.length; i++) {
@@ -281,8 +286,16 @@ function generateJavascriptTOC (options) {
 			*/
 			// NEW THEORY: top-level depths get zipfile links
 			var depths = entry.depth.split(",");
-			if (depths.length == 1) {
-				var d = parseInt(depths[0]);
+			var count = 0;
+			var first_level = undefined;
+			for (var j = 0; j < depths.length; j++) {
+				if (depths[j] != undefined) {
+					count++;
+					if (first_level == undefined) first_level = depths[j];
+				}
+			}
+			if (count == 1) {
+				var d = parseInt(first_level);
 				if (d > 0 && d < lastTopLevel) {
 					if (d < 10) d = "0" + d;
 					obj.download = path.join(options.mediaPath, options.isbn + "-lesson_" + d + ".zip");
