@@ -18,8 +18,10 @@
 		}
 		var script = document.createElement('script');
 		script.src = getInformITBaseURL() + "js/require.js";
-		script.async = false;
-		script.dataset.main = "viewer";
+		if (script.dataset)
+			script.dataset.main = "viewer";
+		else
+			script.setAttribute("data-main", "viewer");
 		document.head.appendChild(script);
 	</script>
 </head>
