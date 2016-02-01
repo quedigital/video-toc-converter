@@ -18,7 +18,9 @@
     "socket.io": "^1.3",
     "event-stream": "^3.3",
     "csv-parse": "^0.1",
-    "datauri": "^0.7"
+    "datauri": "^0.7",
+    "lunr": "^0.5",
+    "yauzl": "^2.3"
   },
   "devDependencies": {},
   "author": "",

@@ -2,12 +2,13 @@ var fs = require('fs');
 var archiver = require('archiver');
 var express = require('express');
 var multer = require('multer');
-var unzip = require('unzip');
 var path = require('path');
 var cheerio = require('cheerio');
 var es = require('event-stream');
 var parse = require('csv-parse');
 var Datauri = require('datauri');
+var lunr = require('lunr');
+var yauzl = require("yauzl");
 
 var app = express();
 
@@ -40,6 +41,7 @@ app.post('/upload', function(request, response) {
 		var converted = doConversion({
 			name: request.files.file.originalname,
 			path: request.files.file.path,
+			transcript_path: request.files.transcript_zip.path,
 			posterFile: posterFile,
 			response: response,
 			id: request.body.requestid,
@@ -110,6 +112,11 @@ function makeAllPaths (dir) {
 function doConversion (options) {
 	options.timestamp = Date.now();
 
+	options.idx = lunr(function () {
+		this.field('title');
+		this.field('body');
+	});
+
 	var input = fs.readFileSync(options.path, "utf8");
 	var parseOptions = { delimiter: "\t", quote: "" };
 
@@ -117,7 +124,7 @@ function doConversion (options) {
 		if (!err) {
 			processData(options, output);
 
-			callWhenComplete(options);
+			processTranscript(options);
 		} else {
 			console.log("error");
 			console.log(err);
@@ -214,10 +221,6 @@ function processData (options, data) {
 	options.lastLesson = lastLesson;
 	options.lastSublesson = lastSublesson;
 	options.lastDepth = lastDepth;
-
-	generateJavascriptTOC(options);
-
-	writeZip(options);
 }
 
 function parseDepthsFromFields (obj, info, last, counters) {
@@ -273,6 +276,9 @@ function generateJavascriptTOC (options) {
 		var entry = options.toc[i];
 
 		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
+
+		if (entry.captions) obj.captions = entry.captions;
+		if (entry.transcript) obj.transcript = entry.transcript;
 
 		if (options.zipfiles) {
 			/*
@@ -376,7 +382,163 @@ function parseInfoFromText (params) {
 	return obj;
 }
 
-function callWhenComplete (options) {
+function streamToString (stream, cb) {
+	var chunks = [];
+	stream.on('data', function (chunk) {
+		chunks.push(chunk);
+	});
+
+	stream.on('end', function () {
+		cb(chunks.join(''));
+	});
+}
+
+function processTranscript (options) {
+	var returnDir = options.name + options.timestamp;
+	var targetDir = "temp/" + returnDir + "/";
+
+	// unzip transcript zip
+	// convert srt to vtt
+	// associate videos with transcript files
+	// add transcript (vtt or dbxf) to lunr search index
+	// zip up vtt, dbxf, and search index
+
+	yauzl.open(options.transcript_path, function (err, zipfile) {
+		if (err) throw err;
+
+		zipfile.on("close", function () {
+			doneWithTranscript(options);
+		});
+
+		zipfile.on("entry", function (entry) {
+			if (/\/$/.test(entry.fileName)) {
+				// directory file names end with '/'
+				return;
+			}
+
+			zipfile.openReadStream(entry, function (err, readStream) {
+				if (err) throw err;
+
+				readStream.setEncoding('utf8');
+
+				// process the srt files
+				if (entry.fileName.indexOf(".srt") != -1) {
+					// THEORY: find the toc video file that most closely matches this srt file
+					var tocReference = findTOCReference(options.toc, entry.fileName);
+
+					var newFilename = entry.fileName.replace(".srt", ".vtt");
+
+					streamToString(readStream, function (s) {
+						var writePath = path.join(targetDir + "/media/vtt/", newFilename);
+						var filePath = path.dirname(writePath);
+						makeAllPaths(filePath);
+
+						s = s.replace(/\r/g, "");
+
+						var searchableText = "";
+
+						var output = "WEBVTT\n\n";
+
+						var lines = s.split("\n");
+						var count = 0;
+						for (var i = 0; i < lines.length; i++) {
+							var line = lines[i];
+							if (line == "") count = 0;
+							else count++;
+
+							if (count == 2) {
+								// replace commas in timing lines with periods
+								line = line.replace(/,/g, ".");
+								// add line position to move the cue up a little (CSS was ineffective)
+								line += " line:80%";
+							} else if (count > 2) {
+								searchableText += line;
+							}
+
+							output += line + "\n";
+						}
+
+						output = output.trim();
+
+						fs.writeFileSync(writePath, output, {encoding: "UTF-8", flag: "w"});
+
+						if (tocReference) {
+							var doc = {
+								"title": tocReference.title,
+								"body": searchableText,
+								"id": tocReference.index
+							};
+
+							options.toc[tocReference.index].captions = "media/vtt/" + newFilename;
+
+							var transcriptFilename = path.basename(newFilename, path.extname(newFilename)) + ".dfxp";
+							options.toc[tocReference.index].transcript = "media/transcript/" + transcriptFilename;
+
+							options.idx.add(doc);
+						}
+					});
+				} else if (entry.fileName.indexOf(".dfxp") != -1) {
+					var writePath = path.join(targetDir + "/media/transcript/", entry.fileName);
+
+					// ensure parent directory exists
+					var filePath = path.dirname(writePath);
+					makeAllPaths(filePath);
+
+					// write file
+					readStream.pipe(fs.createWriteStream(writePath));
+				}
+			});
+		});
+	});
+}
+
+function findTOCReference (toc, filename) {
+	var file = path.basename(filename, path.extname(filename));
+	// assuming the transcript file is in this format: 9780789756350-02_04_01.vtt
+	var dash = file.indexOf("-");
+	if (dash != -1) {
+		file = file.substr(dash + 1);
+	}
+
+	if (file) {
+		for (var i = 0; i < toc.length; i++) {
+			var entry = toc[i];
+			if (entry.video && entry.video.indexOf(file) != -1) {
+				return {
+					title: entry.desc,
+					index: i
+				}
+			}
+		}
+	}
+
+	return undefined;
+}
+
+function includeSearch (archive, options) {
+	var search_index = JSON.stringify(options.idx.toJSON());
+	var search_module = "define([], function () { return " + search_index + "; });";
+
+	archive.append(search_module, { name: "/search_index.js" });
+}
+
+function includeTranscriptFolders (archive, options) {
+	var returnDir = options.name + options.timestamp;
+	var targetDir = "temp/" + returnDir + "/";
+
+	makeAllPaths(targetDir + "media/vtt/");
+	archive.directory(targetDir + "media/vtt/", "/media/vtt/");
+	makeAllPaths(targetDir + "media/transcript/");
+	archive.directory(targetDir + "media/transcript/", "/media/transcript/");
+}
+
+function doneWithTranscript (options) {
+	generateJavascriptTOC(options);
+
+	writeZip(options);
+}
+
+function completelyDone (options) {
 	sendProgress(options.id, 100);
 
 	options.response.json({"link": options.outputFile});
@@ -398,7 +560,7 @@ function writeZip (options) {
 	var archive = archiver('zip');
 
 	outputStream.on("close", function () {
-		doOnDone(options, outputStream);
+		doneWithZip(options, outputStream);
 	});
 
 	archive.pipe(outputStream);
@@ -406,17 +568,20 @@ function writeZip (options) {
 	archive.append(options.tocJS, { name: "/toc.js"});
 
 	includeViewer(archive, options);
-//	includeSearch(archive, options);
+	includeSearch(archive, options);
+	includeTranscriptFolders(archive, options);
 
 	archive.finalize();
 
 	options.outputFile = outputFile;
 }
 
-function doOnDone (options, outputStream) {
+function doneWithZip (options, outputStream) {
 	if (outputStream) {
 		doCleanup(options, outputStream);
 	}
+
+	completelyDone(options);
 }
 
 function doCleanup (options, outputStream) {
