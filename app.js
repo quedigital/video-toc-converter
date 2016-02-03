@@ -35,13 +35,18 @@ app.post('/upload', function(request, response) {
 			posterFile = request.files.posterFile.path;
 		}
 
+		var transcriptFile;
+		if (request.files.transcript_zip) {
+			transcriptFile = request.files.transcript_zip.path;
+		}
+
 		//console.log(request.body); // form fields
 		//console.log(request.files); // form files
 
 		var converted = doConversion({
 			name: request.files.file.originalname,
 			path: request.files.file.path,
-			transcript_path: request.files.transcript_zip.path,
+			transcript_path: transcriptFile,
 			posterFile: posterFile,
 			response: response,
 			id: request.body.requestid,
@@ -124,7 +129,10 @@ function doConversion (options) {
 		if (!err) {
 			processData(options, output);
 
-			processTranscript(options);
+			if (options.transcriptPath)
+				processTranscript(options);
+			else
+				doneWithTranscript(options);
 		} else {
 			console.log("error");
 			console.log(err);
