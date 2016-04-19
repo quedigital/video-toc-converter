@@ -18,3 +18,4 @@
 // DONE: add transcript references to toc.js
 // DONE: bundle transcript and caption files into converted zip
 // DONE: process TOCs even if they don't have transcripts
+// DONE: add TOC to search index

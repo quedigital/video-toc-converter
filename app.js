@@ -288,6 +288,14 @@ function generateJavascriptTOC (options) {
 		if (entry.captions) obj.captions = entry.captions;
 		if (entry.transcript) obj.transcript = entry.transcript;
 
+		// add this TOC entry to the search index
+		var doc = {
+			"title": entry.desc,
+			"id": i
+		};
+
+		options.idx.add(doc);
+
 		if (options.zipfiles) {
 			/*
 			// THEORY: lessons between 1 and n-1 get zipfile links
