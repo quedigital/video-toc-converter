@@ -54,6 +54,8 @@ app.post('/upload', function(request, response) {
 			mediaPath: request.body.path == undefined ? "" : request.body.path,
 			zipfiles: request.body.zipfiles,
 			courseZipfile: request.body.courseZipfile,
+			sampleMode: request.body.sampleMode,
+			sampleModeISBN: request.body.sampleModeISBN,
 			isbn: request.body.isbn
 		});
 	}
@@ -164,7 +166,8 @@ function processData (options, data) {
 			sublesson: row[3],
 			subsublesson: row[4],
 			filename: row[5],
-			duration: row[6]
+			duration: row[6],
+			isDisabled: row[7]
 		};
 
 		var description = parsed.part;
@@ -190,6 +193,7 @@ function processData (options, data) {
 
 		obj.short = info.short;
 		obj.desc = info.desc;
+		obj.disabled = parsed.isDisabled;
 
 		if (obj.desc == "Learning Objectives") {
 			obj.short = obj.lesson + ".0";
@@ -333,6 +337,10 @@ function generateJavascriptTOC (options) {
 			} else {
 				obj.video = entry.video;
 			}
+		}
+
+		if (entry.disabled) {
+			obj.disabled = true;
 		}
 
 		s += JSON.stringify(obj);
@@ -622,6 +630,12 @@ function includeViewer (archive, options) {
 		type: "metadata",
 		infinite_scrolling: false
 	};
+
+	if (options.sampleMode) {
+		settings.buyButton = options.sampleModeISBN;
+
+		archive.file("public/paywall.html", { name: "/paywall.html" });
+	}
 
 	var settings_string = JSON.stringify(settings);
 
