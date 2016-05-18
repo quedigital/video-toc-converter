@@ -55,7 +55,7 @@ app.post('/upload', function(request, response) {
 			zipfiles: request.body.zipfiles,
 			courseZipfile: request.body.courseZipfile,
 			sampleMode: request.body.sampleMode,
-			sampleModeISBN: request.body.sampleModeISBN,
+			sampleModeLink: request.body.sampleModeLink,
 			isbn: request.body.isbn
 		});
 	}
@@ -632,9 +632,12 @@ function includeViewer (archive, options) {
 	};
 
 	if (options.sampleMode) {
-		settings.buyButton = options.sampleModeISBN;
+		settings.buyButton = options.sampleModeLink;
 
-		archive.file("public/paywall.html", { name: "/paywall.html" });
+		var pw = fs.readFileSync("public/paywall.html").toString();
+		pw = pw.replace("path-to-buy", options.sampleModeLink);
+
+		archive.append(pw, { name: "/paywall.html" });
 	}
 
 	var settings_string = JSON.stringify(settings);

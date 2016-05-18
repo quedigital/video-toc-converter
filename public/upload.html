@@ -41,6 +41,10 @@
 		.block {
 			display: block;
 		}
+
+		input[name="sampleModeLink"] {
+			min-width: 30em;
+		}
 	</style>
 </head>
 <body>
@@ -117,8 +121,9 @@
                 <span class="input-group-addon">
                     <input name="sampleMode" type="checkbox">
                 </span>
-				<input type="text" name="sampleModeISBN" class="form-control" placeholder="ISBN for Add to Cart">
+				<input type="text" name="sampleModeLink" class="form-control" placeholder="Full Link for Add to Cart">
 			</div>
+			<p class="help-block">ie, https://www.informit.com/buy.aspx?isbn=0134499301</p>
 		</div>
 
 		<label>TOC (TSV) File</label>
