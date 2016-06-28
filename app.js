@@ -131,7 +131,7 @@ function doConversion (options) {
 		if (!err) {
 			processData(options, output);
 
-			if (options.transcriptPath)
+			if (options.transcript_path)
 				processTranscript(options);
 			else
 				doneWithTranscript(options);
