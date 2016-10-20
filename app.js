@@ -53,7 +53,9 @@ app.post('/upload', function(request, response) {
 			title: request.body.title,
 			mediaPath: request.body.path == undefined ? "" : request.body.path,
 			zipfiles: request.body.zipfiles,
-			courseZipfile: request.body.courseZipfile,
+			bannerDownloadLabel: request.body.bannerDownloadLabel,
+			bannerDownloadLink: request.body.bannerDownloadLink,
+			/*courseZipfile: request.body.courseZipfile,*/
 			sampleMode: request.body.sampleMode,
 			sampleModeLink: request.body.sampleModeLink,
 			isbn: request.body.isbn
@@ -271,8 +273,12 @@ function parseDepthsFromFields (obj, info, last, counters) {
 }
 
 function generateJavascriptTOC (options) {
-	var s = "define([], function () {\n\
-	var toc = [\n";
+	var s = "define([], function () {\n";
+
+	var returnObj = {
+		toc: [],
+		markers: []
+	};
 
 	var lastTopLevel = undefined;
 	if (options.lastDepth) {
@@ -287,7 +293,7 @@ function generateJavascriptTOC (options) {
 	for (var i = 0; i < options.toc.length; i++) {
 		var entry = options.toc[i];
 
-		var obj = { depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration };
+		var obj = {depth: entry.depth, short: entry.short, desc: entry.desc, duration: entry.duration};
 
 		if (entry.captions) obj.captions = entry.captions;
 		if (entry.transcript) obj.transcript = entry.transcript;
@@ -302,14 +308,14 @@ function generateJavascriptTOC (options) {
 
 		if (options.zipfiles) {
 			/*
-			// THEORY: lessons between 1 and n-1 get zipfile links
-			var lessonNumber = parseInt(entry.lesson);
-			if (lessonNumber > 0 && lessonNumber < options.lastLesson && (entry.sublesson === "" || entry.sublesson === undefined)) {
-				var lessondigits = parseInt(entry.lesson);
-				if (lessondigits < 10) lessondigits = "0" + lessondigits;
-				obj.download = path.join(options.mediaPath, options.isbn + "-lesson_" + lessondigits + ".zip");
-			}
-			*/
+			 // THEORY: lessons between 1 and n-1 get zipfile links
+			 var lessonNumber = parseInt(entry.lesson);
+			 if (lessonNumber > 0 && lessonNumber < options.lastLesson && (entry.sublesson === "" || entry.sublesson === undefined)) {
+			 var lessondigits = parseInt(entry.lesson);
+			 if (lessondigits < 10) lessondigits = "0" + lessondigits;
+			 obj.download = path.join(options.mediaPath, options.isbn + "-lesson_" + lessondigits + ".zip");
+			 }
+			 */
 			// NEW THEORY: top-level depths get zipfile links
 			var depths = entry.depth.split(",");
 			var count = 0;
@@ -343,36 +349,16 @@ function generateJavascriptTOC (options) {
 			obj.disabled = true;
 		}
 
-		s += JSON.stringify(obj);
-
-		if (i < options.toc.length - 1) {
-			s += ",";
-		}
-
-		s += "\n";
+		returnObj.toc.push(obj);
 	}
 
-	s += "];\n";
+	returnObj.projectTitle = options.title;
 
-	s += "var projectTitle = " + JSON.stringify(options.title) + ";\n";
+	returnObj.bannerDownloadLabel = options.bannerDownloadLabel;
+	returnObj.bannerDownloadLink = options.bannerDownloadLink ? path.join(options.mediaPath, options.bannerDownloadLink) : undefined;
+	returnObj.posterImageData = options.posterImageData;
 
-	if (options.courseZipfile) {
-		var n = path.join(options.mediaPath, options.isbn + "-lessons.zip");
-		s += "var zipFile = " + JSON.stringify(n) + ";\n";
-	} else {
-		s += "var zipFile = undefined;\n";
-	}
-
-	if (options.posterImageData) {
-		s += "var posterImageData = " + JSON.stringify(options.posterImageData) + ";\n";
-	} else {
-		s += "var posterImageData = undefined;\n";
-	}
-
-	s += "return { toc: toc, markers: [], title: projectTitle, posterImage: posterImageData, zipFile: zipFile }\n\
-});";
-
-	options.tocJS = s;
+	options.tocJS = s + "return " + JSON.stringify(returnObj) + ";\n});";
 }
 
 function parseInfoFromText (params) {
