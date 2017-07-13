@@ -20,3 +20,4 @@
 // DONE: process TOCs even if they don't have transcripts
 // DONE: add TOC to search index
 // DONE: added banner bar download option (in place of "download title zipfile")
+// DONE: removing node engine specification (Heroku security update)
