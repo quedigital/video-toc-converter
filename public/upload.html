@@ -67,6 +67,19 @@
 					<input type="text" class="form-control" name="title" id="inputTitle" placeholder="Enter project title">
 				</div>
 				<div class="form-group">
+					<label class="block">Skin </label>
+					<div class="btn-group">
+						<button id="btnSkin" type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-expanded="false">
+							Default <span class="caret"></span>
+						</button>
+						<ul id="skin-dropdown" class="dropdown-menu" role="menu">
+							<li><a href="#">Default </a></li>
+							<li><a href="#">Microsoft </a></li>
+						</ul>
+						<input type="text" name="skin" value="Default" hidden />
+					</div>
+				</div>
+				<div class="form-group">
 					<label for="inputPath">Media Path</label>
 					<input type="text" class="form-control" name="path" id="inputPath" value="media/video/">
 				</div>
@@ -171,6 +184,13 @@
 </div>
 
 <script>
+	function onSelectSkin (event) {
+		var val = $(event.target).text().trim();
+		$("input[name='skin']").val(val);
+		$("#btnSkin").html(val + ' <span class="caret"></span>');
+		event.preventDefault();
+	}
+
 	$(function () {
 		var socket = io();
 //		var socket = io(window.location.origin, { path: "/public/js/socket.io"});
@@ -207,6 +227,8 @@
 				input.val(log);
 			}
 		});
+
+		$("#skin-dropdown li a").click(onSelectSkin);
 
 		$("#fileinfo").submit(function (event) {
 			event.preventDefault();

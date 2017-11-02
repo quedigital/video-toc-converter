@@ -58,7 +58,8 @@ app.post('/upload', function(request, response) {
 			/*courseZipfile: request.body.courseZipfile,*/
 			sampleMode: request.body.sampleMode,
 			sampleModeLink: request.body.sampleModeLink,
-			isbn: request.body.isbn
+			isbn: request.body.isbn,
+			skin: request.body.skin
 		});
 	}
 });
@@ -614,7 +615,8 @@ function includeViewer (archive, options) {
 	var settings = {
 		title: options.title,
 		type: "metadata",
-		infinite_scrolling: false
+		infinite_scrolling: false,
+		skin: options.skin
 	};
 
 	if (options.sampleMode) {
